@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 助教答疑平台</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --txt: #111827;      /* 黑字 */
+    --muted: #6b7280;    /* 灰色小字 */
+    --line: #e5e7eb;
+    --accent: #2563eb;   /* 蓝色 */
+    --accent-hover: #1d4ed8;
+    --bubble-user: #eff6ff;
+    --bubble-ai: #f9fafb;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--txt);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 48px 20px;
+  }
+  .wrap { width: 100%; max-width: 720px; }
+
+  /* 标题区 */
+  .header { text-align: center; margin-bottom: 32px; }
+  h1 { font-size: 30px; font-weight: 800; letter-spacing: 1px; color: var(--txt); }
+  .sub { font-size: 14px; color: var(--muted); margin-top: 8px; }
+
+  /* 提问对话框 */
+  .ask-box {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px;
+    background: #fff;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+    margin-bottom: 32px;
+  }
+  .ask-box label { font-size: 13px; color: var(--txt); font-weight: 600; display: block; margin-bottom: 10px; }
+  textarea {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 15px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 90px;
+    color: var(--txt);
+    transition: border-color .2s, box-shadow .2s;
+  }
+  textarea::placeholder { color: #9ca3af; }
+  textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
+  }
+  .ask-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 11px 26px;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  button:hover { background: var(--accent-hover); }
+  button:active { transform: translateY(1px); }
+  .hint { font-size: 12px; color: var(--muted); }
+
+  /* 对话记录 */
+  .history-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--txt);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .history-title::before {
+    content: '';
+    width: 4px; height: 16px;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+  .empty {
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 28px 0;
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+  }
+  .log { display: flex; flex-direction: column; gap: 14px; }
+  .msg { max-width: 85%; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.7; }
+  .msg .who { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .msg.user {
+    align-self: flex-end;
+    background: var(--bubble-user);
+    border: 1px solid #dbeafe;
+    color: #1e3a8a;
+  }
+  .msg.user .who { color: var(--accent); }
+  .msg.ai {
+    align-self: flex-start;
+    background: var(--bubble-ai);
+    border: 1px solid var(--line);
+  }
+  .msg.ai .who { color: var(--muted); }
+  .msg .time { display: block; font-size: 11px; color: #9ca3af; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <h1>AI 助教答疑平台</h1>
+    <div class="sub">智能答疑 · 随时提问</div>
+  </div>
+
+  <!-- 提问对话框 -->
+  <form id="askForm" class="ask-box" novalidate>
+    <label for="question">输入你的问题</label>
+    <textarea id="question" name="question" placeholder="例如：请帮我解释一下闭包的概念……"
+              required minlength="2" maxlength="500" spellcheck="true" autofocus></textarea>
+    <div class="ask-actions">
+      <button type="submit">提交</button>
+      <span class="hint">输入问题后点击提交，问题会记录在下方「对话记录」中</span>
+    </div>
+    <div class="hint err" id="qHint" style="color:#dc2626; margin-top:8px;"></div>
+  </form>
+
+  <!-- 对话记录 -->
+  <div class="history-title">对话记录</div>
+  <div id="empty" class="empty">还没有对话，快去提问吧～</div>
+  <div id="log" class="log" style="display:none;"></div>
+</div>
+
+<script>
+(function () {
+  const form = document.getElementById('askForm');
+  const question = document.getElementById('question');
+  const qHint = document.getElementById('qHint');
+  const empty = document.getElementById('empty');
+  const log = document.getElementById('log');
+
+  // 简易“AI 助教”自动回复（前端演示用）
+  function aiReply(q) {
+    if (/闭包|closure/i.test(q)) return '闭包（closure）是指一个函数能够“记住”并访问其定义时所在作用域中的变量，即使该函数在其作用域之外被调用。它是 JavaScript 中实现私有变量与函数工厂的常用手段。';
+    if (/http|ajax|fetch/i.test(q)) return 'fetch 是基于 Promise 的现代异步请求 API。它向服务器发起请求并返回 Response 对象，再通过 response.json() 解析数据，配合 async/await 可以写出更清晰的异步代码。';
+    if (/css|样式|布局/i.test(q)) return '前端布局常用 Flexbox 与 Grid：Flexbox 适合一维排列（行或列），Grid 适合二维网格布局。选择哪种主要取决于内容的排布结构。';
+    return '收到你的问题，我会认真思考后为你解答。这是一个前端演示界面，实际接入大模型 API 后即可返回完整答案。';
+  }
+
+  function now() {
+    const d = new Date();
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  function addMsg(who, text) {
+    empty.style.display = 'none';
+    log.style.display = 'flex';
+    const div = document.createElement('div');
+    div.className = 'msg ' + who;
+    div.innerHTML = `<span class="who">${who === 'user' ? '我' : 'AI 助教'}</span>` +
+      `<span>${text}</span><span class="time">${now()}</span>`;
+    log.appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = question.value.trim();
+    if (!q || q.length < 2) {
+      qHint.textContent = '请至少输入 2 个字的问题。';
+      question.focus();
+      return;
+    }
+    qHint.textContent = '';
+    addMsg('user', q);
+    // 模拟 AI 回复
+    setTimeout(() => addMsg('ai', aiReply(q)), 500);
+    question.value = '';
+    question.focus();
+  });
+})();
+</script>
+</body>
+</html>
